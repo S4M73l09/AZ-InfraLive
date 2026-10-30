@@ -217,7 +217,7 @@ resource "azurerm_container_registry_task" "nginx_build" {
     dockerfile_path      = "app/Dockerfile"
     context_path         = "${var.repo_url}#refs/heads/${var.repo_branch}"
     context_access_token = var.repo_token
-    image_names          = [
+    image_names = [
       "${azurerm_container_registry.staging.login_server}/${var.image_name}:${var.image_tag}"
     ]
   }
