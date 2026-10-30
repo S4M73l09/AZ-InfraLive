@@ -29,8 +29,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  approbal-gate:
+    name: Approbal gate
+    runs-on: ubuntu-latest
+    environment: staging-validation
+    steps:
+      - name: Approval granted
+        run: echo "Staging validation approved"
+
   plan:
     name: 'Terraform Plan (staging)'
+    needs: approbal-gate
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/staging' || inputs.force == 'true'
     environment: staging
@@ -85,7 +94,7 @@ jobs:
         working-directory: ./Infra-staging-tf
 
       - name: Trivy (IaC scan)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: config
           scan-ref: ./Infra-staging-tf
