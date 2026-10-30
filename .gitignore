@@ -1,0 +1,24 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# Local tfvars (si no quieres commitear secretos)
+*.tfvars.json
+
+# Editor/OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Astro/Node
+node_modules/
+site/node_modules/
+site/dist/
+site/.astro/
+
+# acr plantilla
+.actrc

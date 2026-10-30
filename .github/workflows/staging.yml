@@ -1,0 +1,230 @@
+---
+name: 'InfraLive Staging'
+
+"on":
+  push:
+    branches:
+      - staging
+    paths:
+      - 'Infra-staging-tf/**'
+      - 'Custom-roles/**'
+      - '.github/workflows/staging.yml'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Run even if no relevant files changed'
+        required: false
+        default: 'false'
+      allow_destroy:
+        description: 'Allow plans with delete actions (manual override)'
+        required: false
+        default: 'false'
+      allow_replace:
+        description: 'Allow plans with replace actions (manual override)'
+        required: false
+        default: 'false'
+
+concurrency:
+  group: infralive-staging-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    name: 'Terraform Plan (staging)'
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/staging' || inputs.force == 'true'
+    environment: staging
+    env:
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZ_SUBSCRIPTION_ID }}
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+      TF_VAR_enable_acr_task: "true"
+      TF_VAR_repo_token: ${{ secrets.REPO_PAT }}
+    outputs:
+      exit_code: ${{ steps.plan.outputs.exit_code }}
+    permissions:
+      id-token: write
+      contents: read
+      issues: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Gitleaks (secrets scan)
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          fail: true
+
+      - name: Login to Azure using OIDC
+        uses: azure/login@v1
+        with:
+          client-id: ${{ vars.AZ_APPID_STAGING }}
+          tenant-id: ${{ vars.AZ_TENANTID }}
+          subscription-id: ${{ vars.AZ_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.14.3
+
+      - name: Terraform Fmt
+        run: terraform fmt -recursive -check
+        working-directory: ./Infra-staging-tf
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ./Infra-staging-tf
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+
+      - name: TFLint
+        run: |
+          tflint --init
+          tflint --recursive
+        working-directory: ./Infra-staging-tf
+
+      - name: Trivy (IaC scan)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: ./Infra-staging-tf
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+
+      - name: Terraform Validate
+        run: terraform validate
+        working-directory: ./Infra-staging-tf
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          set +e
+          set -o pipefail
+          terraform plan \
+            -detailed-exitcode \
+            -input=false \
+            -no-color \
+            -out=plan.out \
+            | tee plan.log
+          exit_code=${PIPESTATUS[0]}
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          exit 0
+        working-directory: ./Infra-staging-tf
+
+      - name: Export plan JSON
+        if: ${{ steps.plan.outputs.exit_code == '2' }}
+        run: terraform show -json plan.out > plan.json
+        working-directory: ./Infra-staging-tf
+
+      - name: Guard destructive changes
+        if: ${{ steps.plan.outputs.exit_code == '2' }}
+        env:
+          ALLOW_DESTROY: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_destroy == 'true' }}
+          ALLOW_REPLACE: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_replace == 'true' }}
+        run: |
+          delete_count=$(jq '[.resource_changes[]? | select(.change.actions | index("delete"))] | length' plan.json)
+          replace_count=$(jq '[.resource_changes[]? | select(.change.actions == ["delete","create"] or .change.actions == ["create","delete"])] | length' plan.json)
+          echo "delete_count=$delete_count"
+          echo "replace_count=$replace_count"
+          {
+            echo ""
+            echo "Destroy guard: detected $delete_count delete actions."
+            echo "Replace guard: detected $replace_count replace actions."
+            echo "Bypass enabled: ${ALLOW_DESTROY:-false}"
+            echo "Replace bypass enabled: ${ALLOW_REPLACE:-false}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$delete_count" -gt 0 ] && [ "${ALLOW_DESTROY:-false}" != "true" ]; then
+            echo "Destroy actions detected. Re-run manually with allow_destroy=true."
+            exit 1
+          fi
+
+          if [ "$replace_count" -gt 0 ] && [ "${ALLOW_REPLACE:-false}" != "true" ]; then
+            echo "Replace actions detected. Re-run manually with allow_replace=true."
+            exit 1
+          fi
+        working-directory: ./Infra-staging-tf
+
+      - name: Plan Summary
+        run: |
+          exit_code="${{ steps.plan.outputs.exit_code }}"
+          if [ "$exit_code" = "0" ]; then
+            echo "## Staging plan: no changes" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$exit_code" = "2" ]; then
+            echo "## Staging plan: changes detected" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## Staging plan: failed" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f "Infra-staging-tf/plan.out" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Plan diff (last 200 lines):" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            terraform show -no-color Infra-staging-tf/plan.out \
+              | tail -n 200 >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload plan artifact
+        if: ${{ steps.plan.outputs.exit_code == '2' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-plan
+          path: Infra-staging-tf/plan.out
+
+      - name: Setup Infracost
+        if: ${{ env.INFRACOST_API_KEY != '' }}
+        uses: infracost/actions/setup@v3
+        with:
+          api-key: ${{ env.INFRACOST_API_KEY }}
+
+      - name: Infracost Breakdown
+        if: ${{ env.INFRACOST_API_KEY != '' }}
+        run: |
+          if [ "${{ steps.plan.outputs.exit_code }}" = "2" ]; then
+            terraform show -json plan.out > plan.json
+            infracost breakdown \
+              --path=plan.json \
+              --format=table \
+              --out-file=infracost.txt
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Infracost:" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat infracost.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+        working-directory: ./Infra-staging-tf
+
+      - name: Notify Failure
+        if: ${{ steps.plan.outputs.exit_code == '1' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const logPath = 'Infra-staging-tf/plan.log';
+            let excerpt = 'Log not found.';
+            if (fs.existsSync(logPath)) {
+              const content = fs.readFileSync(logPath, 'utf8')
+                .trim()
+                .split('\\n');
+              excerpt = content.slice(-120).join('\\n');
+            }
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/` +
+              `${context.repo.repo}/actions/runs/${context.runId}`;
+            const title = `Staging plan failed: ${context.runId}`;
+            const body = [
+              `Workflow: ${context.workflow}`,
+              `Run: ${runUrl}`,
+              '',
+              'Last log lines:',
+              '```',
+              excerpt,
+              '```'
+            ].join('\n');
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ['ci-failure']
+            });
