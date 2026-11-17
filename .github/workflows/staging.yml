@@ -9,6 +9,7 @@ name: 'InfraLive Staging'
       - 'Infra-staging-tf/**'
       - 'Custom-roles/**'
       - '.github/workflows/staging.yml'
+      - '.github/actions/devsecops/action.yml'
   workflow_dispatch:
     inputs:
       force:
