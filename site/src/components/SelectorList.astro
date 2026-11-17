@@ -1,0 +1,33 @@
+---
+import type { CatalogItem } from "../data/catalog";
+
+interface Props {
+  items: CatalogItem[];
+}
+
+const { items } = Astro.props as Props;
+---
+
+<div class="selector-list">
+  {
+    items.map((item) => {
+      const itemClass = `selector-item ${item.state === "ghost" ? "is-ghost" : "is-active"}`;
+      if (item.href) {
+        return (
+          <a class={itemClass} href={item.href} data-launch-link>
+            <span class="selector-kicker">{item.label}</span>
+            <strong>{item.title}</strong>
+            <small>{item.description}</small>
+          </a>
+        );
+      }
+      return (
+        <article class={itemClass}>
+          <span class="selector-kicker">{item.label}</span>
+          <strong>{item.title}</strong>
+          <small>{item.description}</small>
+        </article>
+      );
+    })
+  }
+</div>

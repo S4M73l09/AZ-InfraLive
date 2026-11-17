@@ -1,0 +1,24 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import SelectorList from "../components/SelectorList.astro";
+import LaunchNavigationScript from "../components/LaunchNavigationScript.astro";
+import { projectItems } from "../data/catalog";
+---
+
+<BaseLayout title="InfraLive | Proyectos">
+  <p class="back-link"><a href="/">← Volver al menu</a></p>
+
+  <header class="reveal">
+    <p class="kicker">Proyectos</p>
+    <h1>Catalogo de proyectos</h1>
+    <p class="lead">
+      Esta seccion sera el indice de tus proyectos tecnicos. Puedes abrir cada tarjeta para ver arquitectura, stack y decisiones.
+    </p>
+  </header>
+
+  <section class="selector-strip reveal">
+    <SelectorList items={projectItems} />
+  </section>
+
+  <LaunchNavigationScript />
+</BaseLayout>

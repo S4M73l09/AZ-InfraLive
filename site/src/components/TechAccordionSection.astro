@@ -1,0 +1,25 @@
+<section class="reveal">
+  <h2>Decisiones técnicas</h2>
+  <div class="accordion">
+    <details>
+      <summary>Bootstrap y backend</summary>
+      <p>Bootstrap es propietario del Resource Group y del Storage Account que contiene el state remoto de InfraLive.</p>
+    </details>
+    <details>
+      <summary>Terraform</summary>
+      <p>Terraform 1.14.3 y el provider azurerm 4.57.0 describen la infraestructura y permiten revisar los cambios antes de aplicarlos.</p>
+    </details>
+    <details>
+      <summary>ACR y JFrog</summary>
+      <p>ACR es la implementación actual. Una rama independiente estudiará JFrog como registry externo para la futura variante de AKS.</p>
+    </details>
+    <details>
+      <summary>Staging y main</summary>
+      <p>Staging se limita a validación y plan. La aplicación real y la demostración de AKS se reservan para main.</p>
+    </details>
+    <details>
+      <summary>OIDC + GitHub Actions</summary>
+      <p>La autenticación federada evita secretos persistentes y permite proteger cada GitHub Environment con sus propias variables.</p>
+    </details>
+  </div>
+</section>

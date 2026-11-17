@@ -18,22 +18,26 @@ La infraestructura se separa en dos repositorios:
 
 ### Backend remoto de InfraLive
 
-El state de staging utiliza:
+Los backends de `staging` y `main` están separados, pero ambos utilizan el mismo
+Storage Account persistente y son administrados por
+`Azure-Bootstrap/60-infralive-state`:
 
+| Entorno | Contenedor | State |
+| --- | --- | --- |
+| `staging` | `tfstate-staging` | `infra-staging.tfstate` |
+| `prod` (`main`) | `tfstate-prod` | `infra-prod.tfstate` |
 
-- Resource Group: `rg-infralive-state`
-- Storage Account: `stinfralivest01`
-- Container: `tfstate-staging`
-- State: `infra-staging.tfstate`
-
-El backend está definido en:
-
+Recursos compartidos del backend:
 
 ```text
-Infra-staging-tf/backend.tf
+Resource Group:  rg-infralive-state
+Storage Account: stinfralivest01
 ```
 
-Configuración actual:
+Bootstrap es el propietario real de los contenedores. InfraLive únicamente
+consume cada backend desde su entorno correspondiente.
+
+Backend de `staging`, definido en `Infra-staging-tf/backend.tf`:
 
 ```hcl
 terraform {
@@ -48,7 +52,13 @@ terraform {
 }
 ```
 
-El backend es administrado por `Azure-Bootstrap/60-infralive-state`.
+Para `main`, el backend utiliza la misma configuración cambiando únicamente
+`container_name` a `tfstate-prod` y `key` a `infra-prod.tfstate`.
+
+El contenedor `tfstate-prod` fue creado mediante el workflow protegido de
+Bootstrap. El Service Principal `oidc-infralive-main` dispone de
+`Storage Blob Data Contributor` sobre el Storage Account para que GitHub Actions
+pueda listar, leer y bloquear el state mediante OIDC.
 
 ### Terraform staging
 
@@ -87,7 +97,6 @@ Su objetivo es validar:
 * Validación Terraform.
 * Plan Terraform.
 * Cambios destructivos o reemplazos.
-* Coste estimado mediante Infracost, si está configurado.
 
 El workflow de staging no ejecuta:
 
@@ -120,6 +129,73 @@ env:
 
 OIDC proporciona la autenticación federada. `ARM_SUBSCRIPTION_ID` indica a Terraform la suscripción donde debe consultar los recursos.
 
+### Identidades OIDC y permisos del backend
+
+Cada entorno utiliza una identidad federada independiente para GitHub Actions.
+
+#### Staging
+
+- Service Principal: `oidc-infralive-staging`
+- GitHub Environment: `staging`
+- Subject federado:
+
+```text
+repo:S4M73l09/Az-InfraLive:environment:staging
+```
+
+La identidad dispone del rol:
+
+```text
+Storage Blob Data Contributor
+```
+
+Sobre el backend remoto:
+
+```text
+Resource Group: rg-infralive-state
+Storage Account: stinfralivest01
+Container: tfstate-staging
+State: infra-staging.tfstate
+```
+
+Este permiso permite a Terraform listar blobs, leer el state y gestionar el bloqueo remoto.
+
+#### Main / Prod
+
+Se utiliza una identidad separada para el entorno de producción:
+
+- Application: `oidc-infralive-main`
+- GitHub Environment: `prod`
+- Federated credential: `github-infralive-prod`
+- Subject federado:
+
+```text
+repo:S4M73l09/Az-InfraLive:environment:prod
+```
+
+La identidad dispone de `Storage Blob Data Contributor` sobre el backend de
+producción (`tfstate-prod`).
+
+#### Variables de GitHub Environment
+
+Cada entorno debe contener:
+
+```text
+AZ_APPID
+AZ_TENANTID
+AZ_SUBSCRIPTION_ID
+AZ_OBJECT_ID
+```
+
+Diferencias:
+
+- `AZ_APPID`: client ID utilizado por `azure/login`.
+- `AZ_TENANTID`: tenant de Microsoft Entra ID.
+- `AZ_SUBSCRIPTION_ID`: suscripción de Azure.
+- `AZ_OBJECT_ID`: object ID del Service Principal, útil para asignaciones RBAC.
+
+No se utilizan client secrets. La autenticación se realiza mediante OIDC y credenciales federadas.
+
 ## Workflows
 
 ### Validación de staging
@@ -142,7 +218,6 @@ Terraform validate
 Terraform plan
 Guardrails contra delete/replace
 Upload del plan
-Infracost opcional
 ```
 
 ### Validación de Pull Requests
@@ -165,7 +240,26 @@ Incluye:
 * Terraform validate.  
 * Terraform plan.  
 * Guardrails destructivos.  
-* Infracost opcional.  
+
+### Practicas DevSecOps
+
+Este archivo contiene los pasos DevSecOps necesarios y permiten reutilizarlo en los worflows necesarios sin necesidad de añadirlos a mano.
+
+Archivo:
+
+```text
+.github/actions/devsecops/action.yml
+```
+
+Añade y reutiliza la capa de seguridad de manera modular a workflows necesarios:
+
+Incluye:
+
++ GitLeaks
++ Terraform format
++ Trivy
++ Checkov
++ TFLint
 
 ## Verificación del backend
 
@@ -179,7 +273,7 @@ az storage account show \
   --output table
 ```
 
-Comprobar el contenedor:
+Comprobar los contenedores:
 
 ```bash
 az storage container show \
@@ -187,9 +281,15 @@ az storage container show \
   --account-name stinfralivest01 \
   --auth-mode login \
   --output table
+
+az storage container show \
+  --name tfstate-prod \
+  --account-name stinfralivest01 \
+  --auth-mode login \
+  --output table
 ```
 
-Comprobar el state:
+Comprobar los states:
 
 ```bash
 az storage blob list \
@@ -198,12 +298,20 @@ az storage blob list \
   --auth-mode login \
   --num-results 1 \
   --output table
+
+az storage blob list \
+  --account-name stinfralivest01 \
+  --container-name tfstate-prod \
+  --auth-mode login \
+  --num-results 1 \
+  --output table
 ```
 
-El state esperado es:
+States esperados:
 
 ```text
 infra-staging.tfstate
+infra-prod.tfstate
 ```
 
 ## Flujo de trabajo
@@ -332,7 +440,7 @@ Archivo: `.github/workflows/staging.yml`
 Archivo: `.github/workflows/pr-staging.yml`
 
 - Checks en PR para `staging/main`
-- Incluye `tflint`, `gitleaks`, `trivy`, `infracost` (si hay API key)
+- Incluye `tflint`, `gitleaks`, `trivy`
 - Summary con conteo `+ ~ - ↻`
 - Guardrails por labels:
   - `allow-destroy`
@@ -349,7 +457,7 @@ Archivo: `.github/workflows/build-image.yml`
 - Lanza build en Azure con:
   - `az acr task run --registry ... --name ...`
 - No hace `docker build/push` en el runner
-- Funciona tanto para `staging` como para `main`, ademas de verificar el entorno en funcion la rama donde se ejecute.
+- Se prepara para funcionar tanto en `staging` como en `main`, seleccionando el entorno según la rama de destino.
 
 > Ojo: El workflow valida en staging, pero para optimizar recursos, se valida y despliega en prod (main).
 

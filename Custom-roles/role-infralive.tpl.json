@@ -1,0 +1,24 @@
+{
+  "Name": "InfraLiveOperator",
+  "IsCustom": true,
+  "Description": "Custom role for InfraLive (staging/prod) infrastructure operations.",
+  "Actions": [
+    "Microsoft.Resources/subscriptions/read",
+    "Microsoft.Resources/subscriptions/resourceGroups/*",
+    "Microsoft.Resources/deployments/*",
+    "Microsoft.Authorization/roleAssignments/*",
+    "Microsoft.Authorization/roleDefinitions/read",
+    "Microsoft.Network/virtualNetworks/*",
+    "Microsoft.Network/virtualNetworks/subnets/*",
+    "Microsoft.Network/privateEndpoints/*",
+    "Microsoft.Network/privateDnsZones/*",
+    "Microsoft.App/*",
+    "Microsoft.OperationalInsights/workspaces/*",
+    "Microsoft.ContainerRegistry/*"
+  ],
+  "NotActions": [],
+  "NotDataActions": [],
+  "AssignableScopes": [
+    "/subscriptions/__SUBSCRIPTION_ID__"
+  ]
+}

@@ -1,0 +1,21 @@
+<section class="reveal">
+  <h2>Estado del laboratorio</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>Infraestructura</h3>
+      <p>La configuración se mantiene en Terraform y se revisa mediante planes reproducibles.</p>
+    </div>
+    <div class="card">
+      <h3>Contenedores</h3>
+      <p>La rama actual utiliza imágenes Nginx en ACR. La variante JFrog mantendrá la misma aplicación.</p>
+    </div>
+    <div class="card">
+      <h3>CI/CD</h3>
+      <p>Pull Requests y staging validan la infraestructura sin aplicar cambios automáticamente.</p>
+    </div>
+    <div class="card">
+      <h3>Siguiente fase</h3>
+      <p>Main aplicará AKS, verificará el funcionamiento y documentará el resultado antes de destruir los recursos.</p>
+    </div>
+  </div>
+</section>

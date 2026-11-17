@@ -1,0 +1,26 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import Hero from "../../components/Hero.astro";
+import DescriptionSection from "../../components/DescriptionSection.astro";
+import ArchitectureSection from "../../components/ArchitectureSection.astro";
+import CicdSection from "../../components/CicdSection.astro";
+import StackUsedSection from "../../components/StackUsedSection.astro";
+import TechAccordionSection from "../../components/TechAccordionSection.astro";
+import AppliedSection from "../../components/AppliedSection.astro";
+import PrinciplesSection from "../../components/PrinciplesSection.astro";
+import FooterSection from "../../components/FooterSection.astro";
+---
+
+<BaseLayout title="InfraLive | Laboratorio de Infraestructura">
+  <p class="back-link"><a href="/labs">← Volver a laboratorios</a></p>
+
+  <Hero />
+  <DescriptionSection />
+  <ArchitectureSection />
+  <CicdSection />
+  <StackUsedSection />
+  <TechAccordionSection />
+  <AppliedSection />
+  <PrinciplesSection />
+  <FooterSection />
+</BaseLayout>

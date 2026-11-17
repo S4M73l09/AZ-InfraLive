@@ -1,0 +1,13 @@
+<script>
+  const links = document.querySelectorAll('[data-launch-link]');
+  links.forEach((link) => {
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      const target = link.getAttribute('href');
+      link.classList.add('is-launching');
+      setTimeout(() => {
+        if (target) window.location.href = target;
+      }, 220);
+    });
+  });
+</script>

@@ -1,0 +1,20 @@
+---
+import "../styles/main.css";
+
+const { title = "InfraLive | Staging Overview" } = Astro.props;
+---
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="content-blur">
+        <slot />
+      </div>
+    </div>
+  </body>
+</html>

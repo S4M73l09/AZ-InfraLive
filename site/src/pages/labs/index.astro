@@ -1,0 +1,24 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import SelectorList from "../../components/SelectorList.astro";
+import LaunchNavigationScript from "../../components/LaunchNavigationScript.astro";
+import { labItems } from "../../data/catalog";
+---
+
+<BaseLayout title="InfraLive | Laboratorios">
+  <p class="back-link"><a href="/">← Volver al menu</a></p>
+
+  <header class="reveal">
+    <p class="kicker">Laboratorios</p>
+    <h1>Selecciona un laboratorio</h1>
+    <p class="lead">
+      Elige un laboratorio para entrar en su guía completa, arquitectura y decisiones técnicas.
+    </p>
+  </header>
+
+  <section class="selector-strip reveal">
+    <SelectorList items={labItems} />
+  </section>
+
+  <LaunchNavigationScript />
+</BaseLayout>
