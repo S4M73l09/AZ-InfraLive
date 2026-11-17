@@ -1,0 +1,200 @@
+---
+name: 'PR Checks (staging)'
+
+"on":
+  pull_request:
+    branches:
+      - staging
+      - main
+    paths:
+      - 'Infra-staging-tf/**'
+      - '.github/workflows/pr-staging-main.yml'
+      - 'Infra-main-tf/**'
+      - '.github/actions/devsecops/**'
+
+concurrency:
+  group: infralive-pr-${{ github.base_ref }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  approval-gate:
+    name: approval-gate
+    runs-on: ubuntu-latest
+    environment: ${{ github.base_ref == 'main' && 'prod-validation' || 'staging-validation' }}
+    steps:
+      - name: Approval granted
+        run: echo "Validation approved for ${{ github.base_ref }}"
+
+  plan:
+    name: 'Terraform Plan (PR staging-main)'
+    needs: approval-gate
+    runs-on: ubuntu-latest
+    environment: ${{ github.base_ref == 'main' && 'prod' || 'staging' }}
+    permissions:
+      id-token: write
+      contents: read
+      issues: write
+
+    env:
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZ_SUBSCRIPTION_ID }}
+      AZURE_ENVIRONMENT: ${{ github.base_ref == 'main' && 'prod' || 'staging' }}
+      TF_DIR: ${{ github.base_ref == 'main' && 'Infra-main-tf' || 'Infra-staging-tf' }}
+      TF_VAR_enable_acr_task: "true"
+      TF_VAR_repo_token: ${{ secrets.REPO_PAT }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to Azure using OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZ_APPID }}
+          tenant-id: ${{ vars.AZ_TENANTID }}
+          subscription-id: ${{ vars.AZ_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.14.3
+
+      - name: DevSecOps checks
+        uses: ./.github/actions/devsecops
+        with:
+          terraform-directory: ${{ env.TF_DIR }}
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ./${{ env.TF_DIR }}
+
+      - name: Terraform Validate
+        run: terraform validate
+        working-directory: ./${{ env.TF_DIR }}
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          set +e
+          set -o pipefail
+          terraform plan \
+            -detailed-exitcode \
+            -input=false \
+            -no-color \
+            -out=plan.out \
+            | tee plan.log
+          exit_code=${PIPESTATUS[0]}
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+          exit 0
+        working-directory: ./${{ env.TF_DIR }}
+
+      - name: Plan Counts
+        if: ${{ steps.plan.outputs.exit_code == '2' }}
+        id: counts
+        run: |
+          terraform show -json plan.out > plan.json
+          python ../.github/scripts/plan_counts.py plan.json
+        working-directory: ./${{ env.TF_DIR }}
+
+      - name: Guard destructive changes
+        if: ${{ steps.plan.outputs.exit_code == '2' }}
+        env:
+          ALLOW_DESTROY: ${{ contains(github.event.pull_request.labels.*.name, 'allow-destroy') }}
+          ALLOW_REPLACE: ${{ contains(github.event.pull_request.labels.*.name, 'allow-replace') }}
+        run: |
+          delete_count=$(jq '[.resource_changes[]? | select(.change.actions | index("delete"))] | length' plan.json)
+          replace_count=$(jq '[.resource_changes[]? | select(.change.actions == ["delete","create"] or .change.actions == ["create","delete"])] | length' plan.json)
+          echo "delete_count=$delete_count"
+          echo "replace_count=$replace_count"
+          {
+            echo ""
+            echo "Destroy guard: detected $delete_count delete actions."
+            echo "Replace guard: detected $replace_count replace actions."
+            echo "Bypass label present: ${ALLOW_DESTROY:-false} (label: allow-destroy)"
+            echo "Replace bypass label present: ${ALLOW_REPLACE:-false} (label: allow-replace)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$delete_count" -gt 0 ] && [ "${ALLOW_DESTROY:-false}" != "true" ]; then
+            echo "Destroy actions detected. Add PR label 'allow-destroy' to bypass."
+            exit 1
+          fi
+
+          if [ "$replace_count" -gt 0 ] && [ "${ALLOW_REPLACE:-false}" != "true" ]; then
+            echo "Replace actions detected. Add PR label 'allow-replace' to bypass."
+            exit 1
+          fi
+        working-directory: ./${{ env.TF_DIR }}
+
+      - name: Plan Summary
+        run: |
+          exit_code="${{ steps.plan.outputs.exit_code }}"
+          if [ "$exit_code" = "0" ]; then
+            echo "## PR plan: no changes" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$exit_code" = "2" ]; then
+            echo "## PR plan: changes detected" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## PR plan: failed" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f "$TF_DIR/plan.json" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            printf "Resources: +%s ~%s -%s ↻%s\n" \
+              "${{ steps.counts.outputs.add }}" \
+              "${{ steps.counts.outputs.change }}" \
+              "${{ steps.counts.outputs.destroy }}" \
+              "${{ steps.counts.outputs.replace }}" \
+              >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f "$TF_DIR/plan.out" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Plan diff (last 200 lines):" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            terraform show -no-color "$TF_DIR/plan.out" \
+              | tail -n 200 >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload plan artifact
+        if: ${{ steps.plan.outputs.exit_code == '2' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-${{ github.base_ref }}-plan
+          path: ${{ env.TF_DIR }}/plan.out
+
+      - name: Notify Failure
+        if: ${{ steps.plan.outputs.exit_code == '1' }}
+        uses: actions/github-script@v7
+        env:
+          TF_DIR: ${{ env.TF_DIR }}
+        with:
+          script: |
+            const fs = require('fs');
+            const logPath = `${process.env.TF_DIR}/plan.log`;
+            let excerpt = 'Log not found.';
+            if (fs.existsSync(logPath)) {
+              const content = fs.readFileSync(logPath, 'utf8')
+                .trim()
+                .split('\\n');
+              excerpt = content.slice(-120).join('\\n');
+            }
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/` +
+              `${context.repo.repo}/actions/runs/${context.runId}`;
+            const title = `PR plan failed: ${context.runId}`;
+            const body = [
+              `Workflow: ${context.workflow}`,
+              `Run: ${runUrl}`,
+              '',
+              'Last log lines:',
+              '```',
+              excerpt,
+              '```'
+            ].join('\n');
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ['ci-failure']
+            });
+
+      - name: Fail workflow if Terraform plan failed
+        if: ${{ steps.plan.outputs.exit_code == '1' }}
+        run: exit 1

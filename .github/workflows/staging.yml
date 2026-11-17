@@ -45,7 +45,6 @@ jobs:
     environment: staging
     env:
       ARM_SUBSCRIPTION_ID: ${{ vars.AZ_SUBSCRIPTION_ID }}
-      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
       TF_VAR_enable_acr_task: "true"
       TF_VAR_repo_token: ${{ secrets.REPO_PAT }}
     outputs:
@@ -59,15 +58,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Gitleaks (secrets scan)
-        uses: gitleaks/gitleaks-action@v2
-        with:
-          fail: true
-
       - name: Login to Azure using OIDC
-        uses: azure/login@v1
+        uses: azure/login@v3
         with:
-          client-id: ${{ vars.AZ_APPID_STAGING }}
+          client-id: ${{ vars.AZ_APPID }}
           tenant-id: ${{ vars.AZ_TENANTID }}
           subscription-id: ${{ vars.AZ_SUBSCRIPTION_ID }}
 
@@ -76,30 +70,14 @@ jobs:
         with:
           terraform_version: 1.14.3
 
-      - name: Terraform Fmt
-        run: terraform fmt -recursive -check
-        working-directory: ./Infra-staging-tf
+      - name: DevSecOps checks
+        uses: ./.github/actions/devsecops
+        with:
+          terraform-directory: Infra-staging-tf
 
       - name: Terraform Init
         run: terraform init
         working-directory: ./Infra-staging-tf
-
-      - name: Setup TFLint
-        uses: terraform-linters/setup-tflint@v4
-
-      - name: TFLint
-        run: |
-          tflint --init
-          tflint --recursive
-        working-directory: ./Infra-staging-tf
-
-      - name: Trivy (IaC scan)
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          scan-type: config
-          scan-ref: ./Infra-staging-tf
-          severity: CRITICAL,HIGH
-          exit-code: '1'
 
       - name: Terraform Validate
         run: terraform validate
@@ -180,29 +158,6 @@ jobs:
         with:
           name: staging-plan
           path: Infra-staging-tf/plan.out
-
-      - name: Setup Infracost
-        if: ${{ env.INFRACOST_API_KEY != '' }}
-        uses: infracost/actions/setup@v3
-        with:
-          api-key: ${{ env.INFRACOST_API_KEY }}
-
-      - name: Infracost Breakdown
-        if: ${{ env.INFRACOST_API_KEY != '' }}
-        run: |
-          if [ "${{ steps.plan.outputs.exit_code }}" = "2" ]; then
-            terraform show -json plan.out > plan.json
-            infracost breakdown \
-              --path=plan.json \
-              --format=table \
-              --out-file=infracost.txt
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Infracost:" >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-            cat infracost.txt >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-          fi
-        working-directory: ./Infra-staging-tf
 
       - name: Notify Failure
         if: ${{ steps.plan.outputs.exit_code == '1' }}
