@@ -13,7 +13,7 @@ runs:
 
   steps:
     - name: GitLeaks
-      uses: gitleaks/gitleaks-action@v2
+      uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3
       env:
         GITHUB_TOKEN: ${{ github.token }}
 
@@ -23,7 +23,7 @@ runs:
       run: terraform fmt -check -recursive
 
     - name: Trivy IaC scan
-      uses: aquasecurity/trivy-action@v0.36.0
+      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0 
       with:
         scan-type: config
         scan-ref: ${{ inputs.terraform-directory }}
@@ -34,7 +34,7 @@ runs:
         directory: ${{ inputs.terraform-directory }}
 
     - name: Setup TFLint
-      uses: terraform-linters/setup-tflint@v5
+      uses: terraform-linters/setup-tflint@v6
 
     - name: Initialize TFLint
       shell: bash

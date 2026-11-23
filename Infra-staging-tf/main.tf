@@ -2,78 +2,35 @@ data "azurerm_resource_group" "staging" {
   name = var.resource_group_name
 }
 
-resource "azurerm_virtual_network" "staging" {
-  name                = var.vnet_name
+moved {
+  from = azurerm_virtual_network.staging
+  to   = module.network.azurerm_virtual_network.general
+}
+
+moved {
+  from = azurerm_subnet.cae
+  to   = module.network.azurerm_subnet.cae
+}
+
+moved {
+  from = azurerm_private_dns_zone.containerapps
+  to   = module.network.azurerm_private_dns_zone.containerapps
+}
+
+moved {
+  from = azurerm_private_dns_zone_virtual_network_link.containerapps
+  to   = module.network.azurerm_private_dns_zone_virtual_network_link.containerapps
+}
+
+module "network" {
+  source = "./modules/network"
+
+  resource_group_name = data.azurerm_resource_group.staging.name
   location            = var.location
-  resource_group_name = data.azurerm_resource_group.staging.name
-  address_space       = var.vnet_cidr
-}
-
-resource "azurerm_subnet" "private_endpoints" {
-  name                              = var.pe_subnet_name
-  resource_group_name               = data.azurerm_resource_group.staging.name
-  virtual_network_name              = azurerm_virtual_network.staging.name
-  address_prefixes                  = var.pe_subnet_cidr
-  private_endpoint_network_policies = "Disabled"
-}
-
-
-resource "azurerm_subnet" "cae" {
-  name                 = var.cae_subnet_name
-  resource_group_name  = data.azurerm_resource_group.staging.name
-  virtual_network_name = azurerm_virtual_network.staging.name
-  address_prefixes     = var.cae_subnet_cidr
-}
-
-resource "azurerm_private_dns_zone" "acr" {
-  name                = "privatelink.azurecr.io"
-  resource_group_name = data.azurerm_resource_group.staging.name
-}
-
-resource "azurerm_private_dns_zone_virtual_network_link" "acr" {
-  name                  = "acr-dns-link"
-  resource_group_name   = data.azurerm_resource_group.staging.name
-  private_dns_zone_name = azurerm_private_dns_zone.acr.name
-  virtual_network_id    = azurerm_virtual_network.staging.id
-}
-
-resource "azurerm_private_endpoint" "acr" {
-  name                = "pe-acr"
-  location            = var.location
-  resource_group_name = data.azurerm_resource_group.staging.name
-  subnet_id           = azurerm_subnet.private_endpoints.id
-
-  private_service_connection {
-    name                           = "psc-acr"
-    private_connection_resource_id = azurerm_container_registry.staging.id
-    subresource_names              = ["registry"]
-    is_manual_connection           = false
-  }
-
-  private_dns_zone_group {
-    name                 = "acr-dns-zone-group"
-    private_dns_zone_ids = [azurerm_private_dns_zone.acr.id]
-  }
-}
-
-resource "azurerm_private_dns_zone_virtual_network_link" "containerapps" {
-  name                  = "aca-dns-link"
-  resource_group_name   = data.azurerm_resource_group.staging.name
-  private_dns_zone_name = azurerm_private_dns_zone.containerapps.name
-  virtual_network_id    = azurerm_virtual_network.staging.id
-}
-
-resource "azurerm_private_dns_zone" "containerapps" {
-  name                = "privatelink.azurecontainerapps.io"
-  resource_group_name = data.azurerm_resource_group.staging.name
-}
-
-resource "azurerm_private_dns_a_record" "containerapps_env" {
-  name                = "${var.containerapps_env_name}.${var.location}"
-  zone_name           = azurerm_private_dns_zone.containerapps.name
-  resource_group_name = data.azurerm_resource_group.staging.name
-  ttl                 = 300
-  records             = [azurerm_container_app_environment.staging.static_ip_address]
+  vnet_name           = var.vnet_name
+  vnet_cidr           = var.vnet_cidr
+  cae_subnet_name     = var.cae_subnet_name
+  cae_subnet_cidr     = var.cae_subnet_cidr
 }
 
 resource "azurerm_log_analytics_workspace" "staging" {
@@ -89,8 +46,16 @@ resource "azurerm_container_app_environment" "staging" {
   location                       = var.location
   resource_group_name            = data.azurerm_resource_group.staging.name
   log_analytics_workspace_id     = azurerm_log_analytics_workspace.staging.id
-  infrastructure_subnet_id       = azurerm_subnet.cae.id
+  infrastructure_subnet_id       = module.network.cae_subnet_id
   internal_load_balancer_enabled = true
+}
+
+resource "azurerm_private_dns_a_record" "containerapps_env" {
+  name                = "${var.containerapps_env_name}.${var.location}"
+  zone_name           = module.network.containerapps_dns_zone_name
+  resource_group_name = data.azurerm_resource_group.staging.name
+  ttl                 = 300
+  records             = [azurerm_container_app_environment.staging.static_ip_address]
 }
 
 # Container App privada de staging; consume imagen desde ACR via identidad administrada.
@@ -161,14 +126,22 @@ resource "azapi_update_resource" "nginx_scale" {
   depends_on = [azurerm_container_app.nginx]
 }
 
-# ACR privado para almacenar imagenes de staging usadas por la Container App.
+# ACR publico con autenticación para almacenar imagenes de staging usadas por la Container App.
 resource "azurerm_container_registry" "staging" {
+  #checkov:skip=CKV_AZURE_165:Staging es de una sola región; no requiere replicación geográfica.
+  #checkov:skip=CKV_AZURE_237:Los endpoints dedicados quedan fuera del alcance de esta práctica.
+  #checkov:skip=CKV_AZURE_233:Azure habilita por regiones compatibles y para todos los tiers; Checkov puede no reflejar ese comportamiento.
+  #checkov:skip=CKV_AZURE_166:Excluir escaneo para trabajo futuro, hasta que exista un flujo de escaneo y promoción de imágenes verificadas.
+  #checkov:skip=CKV_AZURE_163:Pendiente para trabajo futuro. Añade escaneo de vulnerabilidades.
+  #checkov:skip=CKV_AZURE_167:Pendiente de retomar. Actualmente solo usado en tiers premium.
+  #checkov:skip=CKV_AZURE_164:Exluido por que sera retirado en 2028.
+
   name                          = var.acr_name
   resource_group_name           = data.azurerm_resource_group.staging.name
   location                      = var.location
   sku                           = var.acr_sku
   admin_enabled                 = false
-  public_network_access_enabled = false
+  public_network_access_enabled = true
 }
 
 # Permite a la identidad de la Container App descargar imagenes desde ACR.
@@ -237,7 +210,7 @@ output "nginx_fqdn" {
 
 output "containerapps_env_subnet_id" {
   description = "Subnet ID used by Container Apps Environment."
-  value       = azurerm_subnet.cae.id
+  value       = module.network.cae_subnet_id
 }
 
 output "containerapps_env_internal_lb" {

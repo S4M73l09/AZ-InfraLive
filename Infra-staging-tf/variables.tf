@@ -28,16 +28,6 @@ variable "cae_subnet_cidr" {
   type        = list(string)
 }
 
-variable "pe_subnet_name" {
-  description = "Subnet name for Private Endpoints."
-  type        = string
-}
-
-variable "pe_subnet_cidr" {
-  description = "Subnet address prefix for Private Endpoints."
-  type        = list(string)
-}
-
 variable "log_analytics_name" {
   description = "Log Analytics workspace name."
   type        = string

@@ -67,6 +67,18 @@ Directorio:
 Infra-staging-tf/
 ```
 
+Usa modulo de red:
+```bash
+Infra-staging-tf/modules/network
+```
+
+Los archivos del modulo contienen:
+```bash
+main.tf
+outputs.tf
+variables.tf
+```
+
 Archivos principales:
 
 `versions.tf`: versiones de Terraform y providers.
@@ -245,6 +257,8 @@ Incluye:
 
 Este archivo contiene los pasos DevSecOps necesarios y permiten reutilizarlo en los worflows necesarios sin necesidad de añadirlos a mano.
 
+Los steps alojan el sha commit de las herramientas en `Gitleaks` y `Trivy`.
+
 Archivo:
 
 ```text
@@ -356,6 +370,11 @@ La infraestructura de staging sirve para validar la configuración sin mantener 
 ## Estructura del repositorio
 
 - `Infra-staging-tf/`
+  - `modules/`: Modulo de red para los recursos de Terraform
+    - `network/`
+       - `main.tf`: recursos del modulo
+       - `outputs.tf`: Salida de los recursos del modulo
+       - `variables.tf`: Variables usadas para el modulo
   - `versions.tf`: versión de Terraform/providers
   - `providers.tf`: configuración providers
   - `variables.tf`: variables
@@ -384,7 +403,6 @@ Archivo principal: `Infra-staging-tf/main.tf`
 - VNet: `vnet-infralive-staging` (`10.20.0.0/16`)
 - Subnets:
   - `snet-cae` (`10.20.2.0/24`)
-  - `snet-pe-staging` (`10.20.3.0/24`)
 - Log Analytics: `law-infralive-staging`
 - Container Apps:
   - Environment: `cae-infralive-staging`
