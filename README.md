@@ -92,7 +92,7 @@ Terraform utiliza:
 
 ```bash
 Terraform: 1.14.3
-azurerm: 4.57.0
+azurerm: 5.13.0
 azapi: >= 1.12.0, < 2.0.0
 ```
 
@@ -127,7 +127,7 @@ GitHub Actions utiliza OIDC mediante `azure/login`:
 - name: Login to Azure using OIDC
   uses: azure/login@v1
   with:
-    client-id: ${{ vars.AZ_APPID_STAGING }}
+    client-id: ${{ vars.AZ_APPID }}
     tenant-id: ${{ vars.AZ_TENANTID }}
     subscription-id: ${{ vars.AZ_SUBSCRIPTION_ID }}
 ```
@@ -237,7 +237,7 @@ Upload del plan
 Archivo:
 
 ```text
-.github/workflows/pr-staging.yml
+.github/workflows/pr-staging-main.yml
 ```
 
 Valida cambios dirigidos a `staging` y `main`.
@@ -328,36 +328,47 @@ infra-staging.tfstate
 infra-prod.tfstate
 ```
 
-## Flujo de trabajo
+## Flujo previsto para `main` / `prod`
+
+El flujo de `staging` es exclusivamente de validación: ejecuta controles y
+`terraform plan`, pero no aplica ni destruye recursos. La aplicación real en
+`main`/`prod`, la verificación de AKS, la captura de evidencia y la destrucción
+posterior son pasos previstos, todavía no implementados. La configuración
+`Infra-main-tf/` aún no está creada.
 
 ```text
-Cambios en Git
+Cambios en una rama de trabajo
       ↓
-Pull Request / staging
+Pull Request hacia staging
       ↓
-fmt + lint + seguridad + validate
+Validación staging: fmt + lint + seguridad + validate
       ↓
 terraform plan
       ↓
-Revisión del plan
+Revisión del plan de staging (sin apply)
+      ↓
+Pull Request hacia main y validación del PR
       ↓
 Merge a main
       ↓
-Aprobación del entorno protegido
+Aprobación del entorno protegido prod
       ↓
-terraform apply (exclusivo solo para rama main - prod)
+terraform apply desde Infra-main-tf/ (previsto; exclusivo de main/prod)
       ↓
-Verificación de AKS
+Verificación de AKS (prevista)
       ↓
-Captura para documentación
+Captura para documentación (prevista)
       ↓
-terraform destroy (exclusivo solo para rama main - prod)
+terraform destroy (previsto; exclusivo de main/prod)
 ```
 
-La infraestructura de staging sirve para validar la configuración sin mantener recursos costosos desplegados permanentemente. La aplicacion real de AKS se reservará para `main`.
+La infraestructura de staging sirve para validar la configuración sin mantener
+recursos desplegados permanentemente. La creación real de AKS se reservará para
+`main`/`prod` cuando se implemente esa configuración y su workflow.
 
 ## Estado actual (staging)
 
+- Uso: validación y planificación; no se ejecutan `terraform apply` ni `terraform destroy`.
 - Resource Group: `rg-infraLive-staging`
 - Backend de estado Terraform:
   - Storage Account: `stinfralivest01`
@@ -365,7 +376,9 @@ La infraestructura de staging sirve para validar la configuración sin mantener 
   - Configuración: `Infra-staging-tf/backend.tf`
 - OIDC (staging): app dedicada con subject
   - `repo:S4M73l09/Az-InfraLive:environment:staging`
-- ACR: `infraliveacr` (SKU `Basic`)
+- El último `terraform state list` no mostró recursos gestionados en el state de staging.
+- El último plan revisado propuso 11 recursos por crear, 0 cambios y 0 destrucciones; es una vista previa y no se aplicó.
+- La VNet, subnet, zona DNS, Container Apps y ACR descritos abajo son recursos declarados/planificados, no un inventario de recursos aplicados desde staging.
 
 ## Estructura del repositorio
 
@@ -403,7 +416,7 @@ Archivo principal: `Infra-staging-tf/main.tf`
 - VNet: `vnet-infralive-staging` (`10.20.0.0/16`)
 - Subnets:
   - `snet-cae` (`10.20.2.0/24`)
-- Log Analytics: `law-infralive-staging`
+- Log Analytics: no esta declarado ni se usara.
 - Container Apps:
   - Environment: `cae-infralive-staging`
   - App Nginx privada (ingress interno)
@@ -433,7 +446,7 @@ Archivo principal: `Infra-staging-tf/main.tf`
 
 ### Providers
 
-- `azurerm` `4.57.0`
+- `azurerm` `5.13.0`
 - `azapi`
 
 ## CI/CD
@@ -455,7 +468,7 @@ Archivo: `.github/workflows/staging.yml`
 
 ### Workflow PR
 
-Archivo: `.github/workflows/pr-staging.yml`
+Archivo: `.github/workflows/pr-staging-main.yml`
 
 - Checks en PR para `staging/main`
 - Incluye `tflint`, `gitleaks`, `trivy`
@@ -469,15 +482,16 @@ Archivo: `.github/workflows/pr-staging.yml`
 
 ### Workflow de imagen
 
-Archivo: `.github/workflows/build-image.yml`
+Archivo: `.github/workflows/build-image-staging.yml`
 
-- Se ejecuta tras `InfraLive Staging` o manualmente
-- Lanza build en Azure con:
+- Se ejecuta únicamente de forma manual mediante `workflow_dispatch`; no se activa automáticamente al terminar `InfraLive Staging`.
+- Utiliza el entorno `staging` y lanza una tarea de build en ACR con:
   - `az acr task run --registry ... --name ...`
 - No hace `docker build/push` en el runner
-- Se prepara para funcionar tanto en `staging` como en `main`, seleccionando el entorno según la rama de destino.
+- Este workflow construye la imagen en ACR; no aplica Terraform ni despliega la infraestructura de producción.
 
-> Ojo: El workflow valida en staging, pero para optimizar recursos, se valida y despliega en prod (main).
+La validación de staging y el despliegue futuro en `main`/`prod` son fases
+separadas; el workflow de aplicación de producción todavía está pendiente.
 
 ## Metodología
 
@@ -511,8 +525,12 @@ Archivo: `.github/workflows/build-image.yml`
 cd Infra-staging-tf
 terraform init
 terraform plan
-terraform apply -> exclusivo para main
 ```
+
+No ejecutar `terraform apply` desde `Infra-staging-tf`: esta configuración se
+usa para validar y generar planes. El apply de producción se hará desde
+`Infra-main-tf/` mediante el workflow protegido cuando esa infraestructura esté
+implementada.
 
 ### Astro
 

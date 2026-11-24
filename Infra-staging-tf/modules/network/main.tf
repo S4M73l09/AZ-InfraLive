@@ -11,13 +11,23 @@ resource "azurerm_subnet" "cae" {
   virtual_network_name = azurerm_virtual_network.general.name
   address_prefixes     = var.cae_subnet_cidr
 
+  delegation {
+    name = "container-apps"
+
+    service_delegation {
+      name = "Microsoft.App/environments"
+      actions = [
+        "Microsoft.Network/virtualNetworks/subnets/join/action"
+      ]
+    }
+  }
+
   #checkov:skip=CKV2_AZURE_31:Staging mantiene ACR Basic público y no configura NSG en la subnet de Container Apps.
 }
 
 resource "azurerm_private_dns_zone_virtual_network_link" "containerapps" {
   name                  = "aca-dns-link"
-  resource_group_name   = var.resource_group_name
-  private_dns_zone_name = azurerm_private_dns_zone.containerapps.name
+  private_dns_zone_id   = azurerm_private_dns_zone.containerapps.id
   virtual_network_id    = azurerm_virtual_network.general.id
 }
 

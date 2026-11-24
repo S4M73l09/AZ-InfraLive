@@ -42,18 +42,21 @@ resource "azurerm_log_analytics_workspace" "staging" {
 }
 
 resource "azurerm_container_app_environment" "staging" {
+  workload_profile {
+    name                      = "Consumption"
+    workload_profile_type     = "Consumption"
+  }
+
   name                           = var.containerapps_env_name
   location                       = var.location
   resource_group_name            = data.azurerm_resource_group.staging.name
-  log_analytics_workspace_id     = azurerm_log_analytics_workspace.staging.id
   infrastructure_subnet_id       = module.network.cae_subnet_id
   internal_load_balancer_enabled = true
 }
 
 resource "azurerm_private_dns_a_record" "containerapps_env" {
   name                = "${var.containerapps_env_name}.${var.location}"
-  zone_name           = module.network.containerapps_dns_zone_name
-  resource_group_name = data.azurerm_resource_group.staging.name
+  private_dns_zone_id = module.network.containerapps_dns_zone_id
   ttl                 = 300
   records             = [azurerm_container_app_environment.staging.static_ip_address]
 }
@@ -128,6 +131,7 @@ resource "azapi_update_resource" "nginx_scale" {
 
 # ACR publico con autenticación para almacenar imagenes de staging usadas por la Container App.
 resource "azurerm_container_registry" "staging" {
+  #checkov:skip=CKV_AZURE_139:exige deshabilitar el acceso publico al ACR, debido a como esta gestionado, limitaria el uso de Actions. Se skipea.
   #checkov:skip=CKV_AZURE_165:Staging es de una sola región; no requiere replicación geográfica.
   #checkov:skip=CKV_AZURE_237:Los endpoints dedicados quedan fuera del alcance de esta práctica.
   #checkov:skip=CKV_AZURE_233:Azure habilita por regiones compatibles y para todos los tiers; Checkov puede no reflejar ese comportamiento.
