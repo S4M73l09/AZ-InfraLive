@@ -125,7 +125,7 @@ GitHub Actions utiliza OIDC mediante `azure/login`:
 
 ```yaml
 - name: Login to Azure using OIDC
-  uses: azure/login@v1
+  uses: azure/login@v3
   with:
     client-id: ${{ vars.AZ_APPID }}
     tenant-id: ${{ vars.AZ_TENANTID }}

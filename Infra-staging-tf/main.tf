@@ -43,8 +43,8 @@ resource "azurerm_log_analytics_workspace" "staging" {
 
 resource "azurerm_container_app_environment" "staging" {
   workload_profile {
-    name                      = "Consumption"
-    workload_profile_type     = "Consumption"
+    name                  = "Consumption"
+    workload_profile_type = "Consumption"
   }
 
   name                           = var.containerapps_env_name

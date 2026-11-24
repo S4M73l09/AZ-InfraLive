@@ -26,9 +26,9 @@ resource "azurerm_subnet" "cae" {
 }
 
 resource "azurerm_private_dns_zone_virtual_network_link" "containerapps" {
-  name                  = "aca-dns-link"
-  private_dns_zone_id   = azurerm_private_dns_zone.containerapps.id
-  virtual_network_id    = azurerm_virtual_network.general.id
+  name                = "aca-dns-link"
+  private_dns_zone_id = azurerm_private_dns_zone.containerapps.id
+  virtual_network_id  = azurerm_virtual_network.general.id
 }
 
 resource "azurerm_private_dns_zone" "containerapps" {
