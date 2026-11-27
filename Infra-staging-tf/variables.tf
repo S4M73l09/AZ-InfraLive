@@ -43,16 +43,6 @@ variable "containerapp_name" {
   type        = string
 }
 
-variable "monitor_workspace_name" {
-  description = "Azure Monitor workspace name (Managed Prometheus)."
-  type        = string
-}
-
-variable "grafana_name" {
-  description = "Azure Managed Grafana name."
-  type        = string
-}
-
 variable "acr_name" {
   description = "Azure Container Registry name (global, lowercase, alphanumeric)."
   type        = string

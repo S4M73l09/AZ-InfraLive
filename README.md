@@ -257,7 +257,7 @@ Incluye:
 
 Este archivo contiene los pasos DevSecOps necesarios y permiten reutilizarlo en los worflows necesarios sin necesidad de añadirlos a mano.
 
-Los steps alojan el sha commit de las herramientas en `Gitleaks` y `Trivy`.
+Los steps alojan el sha commit de las herramientas en `Gitleaks` y `Trivy`. Ademas `Trivy` fija el binario de la version usada.
 
 Archivo:
 
@@ -274,6 +274,8 @@ Incluye:
 + Trivy
 + Checkov
 + TFLint
+
+* `trivy`: Se realiza un análisis informatico de IaC. Sus hallazgos no bloquean la validación y se publican como artifact descargable durante siete dias. Una ejecución en verde no implica ausencia de hallazgos de seguridad.
 
 ## Verificación del backend
 
@@ -416,7 +418,7 @@ Archivo principal: `Infra-staging-tf/main.tf`
 - VNet: `vnet-infralive-staging` (`10.20.0.0/16`)
 - Subnets:
   - `snet-cae` (`10.20.2.0/24`)
-- Log Analytics: no esta declarado ni se usara.
+- Log Analytics: Esta declarado, pero su uso no esta vigente.
 - Container Apps:
   - Environment: `cae-infralive-staging`
   - App Nginx privada (ingress interno)
@@ -518,6 +520,45 @@ separadas; el workflow de aplicación de producción todavía está pendiente.
 - Se puede añadir contenido nuevo sin rehacer diseño (actualizando catálogo + nuevas rutas cuando aplique)
 
 ## Desarrollo local (Staging validacion -> main prod)
+
+### Trabajo local con Git worktrees: staging y prod
+
+La misma forma de trabajo se utiliza para ambos entornos: cada rama tiene su
+propia carpeta, mientras que un repositorio bare almacena los metadatos Git
+compartidos. Esto permite trabajar en paralelo sin cambiar de rama ni apartar
+los cambios pendientes del otro entorno.
+
+```text
+Az-InfraLive/
+├── .bare/      # Historial, referencias y remotos compartidos
+├── staging/    # Rama staging: validación y planificación
+└── prod/       # Rama main: preparación del despliegue de producción
+```
+
+Esta estructura es local; no son carpetas nuevas dentro del repositorio remoto.
+Cada worktree conserva su propio índice y sus cambios locales. Desde `staging/`
+o `prod/`, `git add`, `git commit` y `git push` funcionan normalmente sobre la
+rama correspondiente. Antes de ejecutarlos, comprobar `git status --short --branch`.
+Un push puede activar los workflows configurados para esa rama.
+
+Desde la carpeta contenedora `Az-InfraLive/`, comprobar ambos entornos con:
+
+```bash
+git --git-dir=.bare worktree list
+git -C staging status --short --branch
+git -C prod status --short --branch
+```
+
+No trabajar directamente dentro de `.bare/` ni borrar sus metadatos: ambos
+worktrees dependen de ellos. Para mover un worktree, utilizar `git worktree move`;
+si se mueve el repositorio compartido, reparar los enlaces con `git worktree repair`.
+
+Los worktrees no aíslan la sesión de Azure CLI ni seleccionan automáticamente el
+backend de Terraform. Antes de operar, comprobar la identidad, suscripción,
+directorio Terraform y backend del entorno correspondiente. La organización local
+no cambia la URL remota ni las identidades OIDC de GitHub. Trabajar en `prod/`
+tampoco despliega por sí solo: la aplicación de infraestructura sigue reservada
+al workflow protegido de producción.
 
 ### Terraform
 

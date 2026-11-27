@@ -22,11 +22,24 @@ runs:
       working-directory: ${{ inputs.terraform-directory }}
       run: terraform fmt -check -recursive
 
-    - name: Trivy IaC scan
+    - name: Trivy IaC scan (informativo)
       uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0 
       with:
+        version: v0.76.2
         scan-type: config
         scan-ref: ${{ inputs.terraform-directory }}
+        format: table
+        output: ${{ github.workspace }}/trivy-iac-report.txt
+        exit-code: '0'
+
+    - name: Upload Trivy report
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: trivy-iac-${{ github.job }}-${{ github.run_attempt }}
+        path: ${{ github.workspace }}/trivy-iac-report.txt
+        retention-days: 7
+        if-no-files-found: warn
 
     - name: Checkov
       uses: bridgecrewio/checkov-action@v12

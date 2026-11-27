@@ -57,7 +57,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7 
 
       - name: Login to Azure using OIDC
         uses: azure/login@v3
@@ -67,7 +67,7 @@ jobs:
           subscription-id: ${{ vars.AZ_SUBSCRIPTION_ID }}
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v4 
         with:
           terraform_version: 1.14.3
 
@@ -94,7 +94,7 @@ jobs:
             -input=false \
             -no-color \
             -out=plan.out \
-            | tee plan.log
+            2<&1 | tee plan.log
           exit_code=${PIPESTATUS[0]}
           echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
           exit 0
@@ -155,14 +155,14 @@ jobs:
 
       - name: Upload plan artifact
         if: ${{ steps.plan.outputs.exit_code == '2' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7 
         with:
           name: staging-plan
           path: Infra-staging-tf/plan.out
 
       - name: Notify Failure
         if: ${{ steps.plan.outputs.exit_code == '1' }}
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const fs = require('fs');
@@ -193,3 +193,7 @@ jobs:
               body,
               labels: ['ci-failure']
             });
+
+      - name: Fail workflow if Terraform plan failed
+        if: ${{ steps.plan.outputs.exit_code == '1' }}
+        run: exit 1
