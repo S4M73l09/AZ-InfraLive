@@ -232,6 +232,25 @@ Guardrails contra delete/replace
 Upload del plan
 ```
 
+#### Video y Capturas mostrando la validacion pasada correctamente.
+
+* `Capturas del summary`.
+![Muestra del summary del workflow](Images-Videos/Images/Capture-summary-staging.png)
+
+* `Captura del entorno correctamente validado`.  
+![Muestra del entorno validado](Images-Videos/Images/Capture-environment-staging.png)
+
+
+#### Video mostrando los jobs y validacion en curso del workflow.  
+
+
+https://github.com/user-attachments/assets/ffd55584-9184-40ce-a06f-65d9d7dba957
+
+
+
+La grabación muestra la validación del workflow de staging.
+
+
 ### Validación de Pull Requests
 
 Archivo:
